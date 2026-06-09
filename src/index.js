@@ -1,6 +1,7 @@
 require('dotenv').config();
 const cron = require('node-cron');
 const { searchCafePosts } = require('./naverSearch');
+const { searchKin } = require('./naverKin');
 const { searchCafeArticles } = require('./cafeCrawler');
 const { sendMessage } = require('./telegram');
 const history = require('./sentHistory');
@@ -42,6 +43,13 @@ async function runMonitor() {
       allResults.push(...apiItems.map(i => ({ ...i, source: i.cafename || '네이버카페' })));
     } catch (e) {
       console.error(`[naverSearch] 키워드 "${keyword}" 오류:`, e.message);
+    }
+
+    try {
+      const kinItems = await searchKin(keyword);
+      allResults.push(...kinItems);
+    } catch (e) {
+      console.error(`[naverKin] 키워드 "${keyword}" 오류:`, e.message);
     }
 
     try {
