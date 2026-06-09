@@ -3,6 +3,7 @@ const cron = require('node-cron');
 const { searchCafePosts } = require('./naverSearch');
 const { searchKin } = require('./naverKin');
 const { searchCafeArticles } = require('./cafeCrawler');
+const { filterRelevant } = require('./aiFilter');
 const { sendMessage } = require('./telegram');
 const history = require('./sentHistory');
 
@@ -58,6 +59,9 @@ async function runMonitor() {
     } catch (e) {
       console.error(`[cafeCrawler] 키워드 "${keyword}" 오류:`, e.message);
     }
+
+    // 네이버 API 과호출 방지 (429 대응)
+    await new Promise(r => setTimeout(r, 300));
   }
 
   // 발송 이력 로드 및 30일 지난 항목 정리
@@ -80,8 +84,18 @@ async function runMonitor() {
     return;
   }
 
-  const body = formatArticles(newItems);
-  const msg = `📣 <b>네이버 예약 알림톡 관련 새 게시글 (${newItems.length}건)</b>\n\n${body}`;
+  // AI 필터링 — 관련 없는 글 제거
+  const filtered = await filterRelevant(newItems);
+
+  if (filtered.length === 0) {
+    console.log(`[${new Date().toLocaleString('ko-KR')}] AI 필터 후 관련 글 없음`);
+    await sendMessage('📋 오늘 관련 새 게시글이 없습니다.');
+    history.save(sent);
+    return;
+  }
+
+  const body = formatArticles(filtered);
+  const msg = `📣 <b>네이버 예약 알림톡 관련 새 게시글 (${filtered.length}건)</b>\n\n${body}`;
 
   // 4096자 제한 분할 전송
   const chunks = [];
@@ -100,7 +114,7 @@ async function runMonitor() {
     await sendMessage(chunk);
   }
 
-  // 발송 완료 후 이력 저장
+  // 발송 완료 후 이력 저장 (AI 필터 통과한 것 + 필터에서 제외된 것 모두 기록해 재수집 방지)
   history.markSent(sent, newItems.map(i => i.link || i.url || i.title));
   history.save(sent);
 
